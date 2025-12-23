@@ -88,7 +88,6 @@ class SimplifiedCTGAN:
         gen_losses = []
         disc_losses = []
 
-        print("="*60)
         for epoch in range(epochs):
             epoch_gen_loss = 0.0
             epoch_disc_loss = 0.0
@@ -137,8 +136,6 @@ class SimplifiedCTGAN:
             # Print progress every print_interval epochs
             if (epoch + 1) % print_interval == 0:
                 print(f"Epoch [{epoch + 1}/{epochs}], Gen Loss: {gen_losses[-1]:.4f}, Disc Loss: {disc_losses[-1]:.4f}")
-
-        print("="*60)
 
         return gen_losses, disc_losses
     

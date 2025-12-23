@@ -1,0 +1,36 @@
+Class distribution before handling imbalanced data:
+Class
+0    170524
+1       360
+
+Class distribution after SMOTE:
+Class
+0    170524
+1    170524
+
+Class distribution after Borderline SMOTE:
+Class
+0    170524
+1    170524
+
+Class distribution after SMOTEENN:
+Class
+1    170524
+0    170214
+
+Final class distribution after CTGAN oversampling:
+Majority class (0): 170524 samples
+Minority class (1): 170524 samples
+
+Final class distribution after Gaussian Copula oversampling:
+Majority class (0): 170524 samples
+Minority class (1): 170524 samples
+
+XGB hyperparameters:
+params = {
+    'n_estimators': 300,
+    'max_depth': 5,
+    'learning_rate': 0.05,
+    'subsample': 0.8,
+    'colsample_bytree': 0.8,
+}
