@@ -1,3 +1,14 @@
+# Dataset directory
+data/
+*.csv
+*.zip
+
+# Mac file
+.DS_Store
+
+# Windows thumbnail cache files
+Thumbs.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
