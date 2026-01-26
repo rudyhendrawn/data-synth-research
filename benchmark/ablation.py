@@ -2,6 +2,7 @@ import itertools
 import json
 import logging
 import os
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -182,8 +183,20 @@ class AblationStudyManager:
 
     def save_experiments(self, experiments: List[AblationExperiment], filename: str) -> None:
         """Save experiment configurations to JSON."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if filename.endswith(".json"):
+            base = filename[:-5]
+            filename = f"{base}_{timestamp}.json"
+        else:
+            filename = f"{filename}_{timestamp}.json"
+
         filepath = os.path.join(self.output_dir, filename)
+        payload = {
+            "generated_at": datetime.now().isoformat(),
+            "experiments": [exp.to_dict() for exp in experiments],
+        }
+
         with open(filepath, "w") as f:
-            json.dump([exp.to_dict() for exp in experiments], f, indent=2)
+            json.dump(payload, f, indent=2)
 
         logger.info("Saved %s experiments to %s", len(experiments), filepath)

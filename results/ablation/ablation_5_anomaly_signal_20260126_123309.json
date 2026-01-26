@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-01-26T12:33:09.629763",
+  "experiments": [
+    {
+      "exp_id": "ablation_anomaly_signal_None",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "XGBoost",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: None"
+    },
+    {
+      "exp_id": "ablation_anomaly_signal_IsolationForest",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "IsolationForest",
+        "model": "XGBoost",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: IsolationForest"
+    },
+    {
+      "exp_id": "ablation_anomaly_signal_LOF",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "LOF",
+        "model": "XGBoost",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: LOF"
+    },
+    {
+      "exp_id": "ablation_anomaly_signal_Autoencoder",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "Autoencoder",
+        "model": "XGBoost",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: Autoencoder"
+    }
+  ]
+}

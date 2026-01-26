@@ -2,18 +2,36 @@ import logging
 import os
 import random
 import time
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import (
+    Any, 
+    Dict, 
+    Iterable, 
+    List, 
+    Optional, 
+    Tuple, 
+    cast
+)
 
 import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import average_precision_score, f1_score, recall_score
+from sklearn.metrics import average_precision_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 
 from loader.data_loader import UniversalDataLoader
 from preprocessor.data_preprocessor import DatasetPreprocessor
 from model.anomaly import add_anomaly_scores
 
+from evaluation.calibration import TemperatureScaler
+from evaluation.metrics import (
+    bootstrap_pr_auc,
+    lift_at_top_k,
+    metrics_at_threshold,
+    recall_at_precision_target,
+    select_threshold_by_fpr,
+    select_threshold_by_precision,
+)
+from evaluation.synth_eval import evaluate_synthetic_data, extract_synthetic_tail
 from .ablation import AblationExperiment
 from .temporal_cv import TemporalLeakageFreeCV, TimeGapConfig
 
@@ -32,20 +50,35 @@ class CrossDomainBenchmark:
         random_seeds: Optional[List[int]] = None,
         data_root: Optional[str] = None,
         handle_unknown_categories: bool = True,
+        precision_target: float = 0.9,
+        fpr_target: float = 0.05,
+        threshold_strategy: str = "precision",
+        bootstrap_samples: int = 2000,
+        gap_configs: Optional[Dict[str, TimeGapConfig]] = None,
     ) -> None:
         self.datasets = datasets
         self.output_dir = output_dir
-        self.random_seeds = random_seeds or [42, 123, 456, 789, 1011]
+        self.random_seeds = random_seeds or [42, 123]
         self.data_root = data_root
         self.handle_unknown_categories = handle_unknown_categories
+        self.precision_target = precision_target
+        self.fpr_target = fpr_target
+        self.threshold_strategy = threshold_strategy
+        self.bootstrap_samples = bootstrap_samples
         os.makedirs(output_dir, exist_ok=True)
 
-        self.gap_configs = {
-            "01_creditcard.csv": TimeGapConfig(lookback_days=7, label_lag_days=14),
-            "03_fraud_oracle.csv": TimeGapConfig(lookback_days=30, label_lag_days=45),
-            "04_bank_account.csv": TimeGapConfig(lookback_days=30, label_lag_days=30),
-            "05_online_payment.csv": TimeGapConfig(lookback_days=1, label_lag_days=1),
-        }
+        if gap_configs is None:
+            defaults = {
+                "01_creditcard.csv": TimeGapConfig(lookback_days=7, label_lag_days=14),
+                "03_fraud_oracle.csv": TimeGapConfig(lookback_days=30, label_lag_days=45),
+                "04_bank_account.csv": TimeGapConfig(lookback_days=30, label_lag_days=30),
+                "05_online_payment.csv": TimeGapConfig(lookback_days=1, label_lag_days=1),
+            }
+            gap_configs = {}
+            for filename in datasets.values():
+                gap_configs[filename] = defaults.get(filename, TimeGapConfig())
+
+        self.gap_configs = gap_configs
 
     def run_single_experiment(
         self,
@@ -79,6 +112,13 @@ class CrossDomainBenchmark:
         X_val, y_val = preprocessor.preprocess(val_df, fit=False)
         X_test, y_test = preprocessor.preprocess(test_df, fit=False)
 
+        X_train = cast(pd.DataFrame, X_train)
+        X_val = cast(pd.DataFrame, X_val)
+        X_test = cast(pd.DataFrame, X_test)
+        y_train = cast(pd.Series, y_train)
+        y_val = cast(pd.Series, y_val)
+        y_test = cast(pd.Series, y_test)
+
         anomaly_method = experiment.components.get("anomaly_signal", "None")
         if anomaly_method != "None":
             X_train, X_val, X_test = add_anomaly_scores(
@@ -88,10 +128,27 @@ class CrossDomainBenchmark:
                 method=anomaly_method,
                 random_state=seed,
             )
+            X_train = cast(pd.DataFrame, X_train)
+            X_val = cast(pd.DataFrame, X_val)
+            X_test = cast(pd.DataFrame, X_test)
 
+        assert X_test is not None
+        assert X_val is not None
         X_train_resampled, y_train_resampled = self._apply_oversampling(
             X_train, y_train, method=experiment.components["oversampling"], seed=seed
         )
+        syn_eval = {}
+        syn_X, syn_y = extract_synthetic_tail(X_train, X_train_resampled, y_train, y_train_resampled)
+        if syn_X is not None:
+            syn_eval = evaluate_synthetic_data(
+                X_real=X_train,
+                X_syn=syn_X,
+                X_test=X_test,
+                y_test=y_test,
+                y_syn=syn_y,
+                y_real=y_train,
+                seed=seed,
+            )
 
         model = self._get_model(
             experiment.components["model"],
@@ -103,11 +160,33 @@ class CrossDomainBenchmark:
         model.fit(X_train_resampled, y_train_resampled)
         train_time = time.time() - start_time
 
-        if experiment.components["calibration"] != "None":
-            model = self._apply_calibration(model, X_val, y_val, experiment.components["calibration"])
+        calib_method = experiment.components["calibration"]
+        if calib_method in {"Platt", "Isotonic"}:
+            model = self._apply_calibration(model, X_val, y_val, calib_method)
+            calib_probs = np.asarray(model.predict_proba(X_val))[:, 1]
+            test_probs = np.asarray(model.predict_proba(X_test))[:, 1]
+        elif calib_method == "Temperature":
+            raw_calib_probs = np.asarray(model.predict_proba(X_val))[:, 1]
+            temp_scaler = TemperatureScaler()
+            temp_scaler.fit(raw_calib_probs, y_val)
+            calib_probs = temp_scaler.transform(raw_calib_probs)
+            test_probs = temp_scaler.transform(np.asarray(model.predict_proba(X_test))[:, 1])
+        else:
+            calib_probs = np.asarray(model.predict_proba(X_val))[:, 1]
+            test_probs = np.asarray(model.predict_proba(X_test))[:, 1]
 
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
-        y_pred = (y_pred_proba >= 0.5).astype(int)
+        if self.threshold_strategy == "fpr":
+            threshold, calib_prec, calib_rec, calib_fpr = select_threshold_by_fpr(
+                y_val, calib_probs, self.fpr_target
+            )
+        else:
+            threshold, calib_prec, calib_rec = select_threshold_by_precision(
+                y_val, calib_probs, self.precision_target
+            )
+            calib_fpr = metrics_at_threshold(y_val, calib_probs, threshold)["fpr"]
+
+        test_metrics_at_th = metrics_at_threshold(y_test, test_probs, threshold)
+        test_pred = (test_probs >= threshold).astype(int)
 
         metrics = {
             "dataset": dataset_name,
@@ -116,16 +195,55 @@ class CrossDomainBenchmark:
             "oversampling": experiment.components["oversampling"],
             "anomaly_signal": anomaly_method,
             "model": experiment.components["model"],
-            "calibration": experiment.components["calibration"],
-            "pr_auc": average_precision_score(y_test, y_pred_proba),
-            "recall": recall_score(y_test, y_pred),
-            "f1": f1_score(y_test, y_pred),
+            "calibration": calib_method,
+            "components": str(experiment.components),
+            "threshold_strategy": self.threshold_strategy,
+            "precision_target": self.precision_target,
+            "fpr_target": self.fpr_target,
+            "threshold": threshold,
+            "calib_precision_at_threshold": calib_prec,
+            "calib_recall_at_threshold": calib_rec,
+            "calib_fpr_at_threshold": calib_fpr,
+            "pr_auc": average_precision_score(y_test, test_probs),
+            "precision": precision_score(y_test, test_pred, zero_division=0),
+            "recall": recall_score(y_test, test_pred, zero_division=0),
+            "f1": test_metrics_at_th["f1"],
+            "recall_at_precision_target": recall_at_precision_target(
+                y_test, test_probs, self.precision_target
+            ),
+            "lift_top_1pct": lift_at_top_k(y_test, test_probs, 0.01),
             "train_time": train_time,
             "train_samples": len(X_train_resampled),
             "test_samples": len(X_test),
             "train_fraud_ratio": float(np.sum(y_train_resampled) / len(y_train_resampled)),
             "test_fraud_ratio": float(np.sum(y_test) / len(y_test)),
         }
+        metrics.update(
+            {
+                "ks_mean": syn_eval.get("ks_mean"),
+                "correlation_gap": syn_eval.get("correlation_gap"),
+                "duplicate_rate": syn_eval.get("duplicate_rate"),
+                "tstr_pr_auc": syn_eval.get("tstr_pr_auc"),
+                "tstr_precision": syn_eval.get("tstr_precision"),
+                "tstr_recall": syn_eval.get("tstr_recall"),
+                "tstr_f1": syn_eval.get("tstr_f1"),
+            }
+        )
+
+        pr_auc_ci = bootstrap_pr_auc(
+            y_test,
+            test_probs,
+            n_bootstrap=self.bootstrap_samples,
+            seed=seed,
+        )
+        metrics.update(
+            {
+                "pr_auc_ci_lower": pr_auc_ci["lower"],
+                "pr_auc_ci_upper": pr_auc_ci["upper"],
+                "pr_auc_bootstrap_mean": pr_auc_ci["mean"],
+                "pr_auc_bootstrap_n": pr_auc_ci["n"],
+            }
+        )
 
         return metrics
 
@@ -197,6 +315,9 @@ class CrossDomainBenchmark:
         )
 
         if use_temporal:
+            assert temporal_cv is not None
+            if temporal_col is None:
+                raise ValueError("Temporal column is not set but temporal split was requested.")
             return temporal_cv.split_with_gap(df, temporal_col=temporal_col, label_col=label_col)
 
         test_size = config.get("test_size", 0.4)
@@ -246,7 +367,8 @@ class CrossDomainBenchmark:
             val_df[col] = val_df[col].where(val_df[col].isin(known[col]), other=unknown_token)
             test_df[col] = test_df[col].where(test_df[col].isin(known[col]), other=unknown_token)
 
-        if unknown_token not in set(train_df[cat_cols].stack().unique()):
+        stacked = train_df[cat_cols].stack()
+        if unknown_token not in set(pd.unique(stacked.to_numpy())):
             train_df = self._append_unknown_row(train_df, cat_cols, config.get("label_col"), unknown_token)
 
         return train_df, val_df, test_df
@@ -272,29 +394,31 @@ class CrossDomainBenchmark:
 
         return pd.concat([train_df, pd.DataFrame([new_row])], ignore_index=True)
 
-    def _apply_oversampling(self, X, y, method: str, seed: int):
+    def _apply_oversampling(
+        self, X: Any, y: Any, method: str, seed: int
+    ) -> Tuple[Any, Any]:
         if method == "None":
             return X, y
         if method == "ROS":
             from imblearn.over_sampling import RandomOverSampler
 
             ros = RandomOverSampler(random_state=seed)
-            return ros.fit_resample(X, y)
+            return _normalize_resample_output(ros.fit_resample(X, y))
         if method == "SMOTE":
             from imblearn.over_sampling import SMOTE
 
             sm = SMOTE(random_state=seed)
-            return sm.fit_resample(X, y)
+            return _normalize_resample_output(sm.fit_resample(X, y))
         if method == "BorderlineSMOTE":
             from imblearn.over_sampling import BorderlineSMOTE
 
             bsm = BorderlineSMOTE(random_state=seed)
-            return bsm.fit_resample(X, y)
+            return _normalize_resample_output(bsm.fit_resample(X, y))
         if method == "SMOTEENN":
             from imblearn.combine import SMOTEENN
 
             sme = SMOTEENN(random_state=seed)
-            return sme.fit_resample(X, y)
+            return _normalize_resample_output(sme.fit_resample(X, y))
         if method == "PytorchGAN":
             from model import oversample_with_pytorch_gan
 
@@ -367,3 +491,9 @@ class CrossDomainBenchmark:
         if positives == 0:
             return 1.0
         return float(negatives / positives)
+
+
+def _normalize_resample_output(result: Any) -> Tuple[Any, Any]:
+    if isinstance(result, tuple) and len(result) >= 2:
+        return result[0], result[1]
+    raise ValueError("Unexpected resample output format.")

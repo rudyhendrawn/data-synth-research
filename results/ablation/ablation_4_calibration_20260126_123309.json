@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-01-26T12:33:09.629659",
+  "experiments": [
+    {
+      "exp_id": "ablation_calibration_None",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "XGBoost",
+        "calibration": "None"
+      },
+      "description": "Ablate calibration: None"
+    },
+    {
+      "exp_id": "ablation_calibration_Platt",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "XGBoost",
+        "calibration": "Platt"
+      },
+      "description": "Ablate calibration: Platt"
+    },
+    {
+      "exp_id": "ablation_calibration_Isotonic",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "XGBoost",
+        "calibration": "Isotonic"
+      },
+      "description": "Ablate calibration: Isotonic"
+    }
+  ]
+}

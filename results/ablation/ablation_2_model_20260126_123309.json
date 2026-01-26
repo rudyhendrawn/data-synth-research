@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-01-26T12:33:09.629061",
+  "experiments": [
+    {
+      "exp_id": "ablation_model_LogisticRegression",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "LogisticRegression",
+        "calibration": "None"
+      },
+      "description": "Ablate model: LogisticRegression"
+    },
+    {
+      "exp_id": "ablation_model_DecisionTree",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "DecisionTree",
+        "calibration": "None"
+      },
+      "description": "Ablate model: DecisionTree"
+    },
+    {
+      "exp_id": "ablation_model_RandomForest",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "RandomForest",
+        "calibration": "None"
+      },
+      "description": "Ablate model: RandomForest"
+    },
+    {
+      "exp_id": "ablation_model_XGBoost",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "XGBoost",
+        "calibration": "None"
+      },
+      "description": "Ablate model: XGBoost"
+    },
+    {
+      "exp_id": "ablation_model_MLP",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "MLP",
+        "calibration": "None"
+      },
+      "description": "Ablate model: MLP"
+    }
+  ]
+}

@@ -101,16 +101,16 @@ class AblationAnalyzer:
         ][metric].values
 
         t_stat, p_value = stats.ttest_rel(data1, data2)
-        pooled_std = np.sqrt((data1.std() ** 2 + data2.std() ** 2) / 2)
+        pooled_std = np.sqrt((np.asarray(data1).std() ** 2 + np.asarray(data2).std() ** 2) / 2)
 
         return {
             "exp_1": exp_id_1,
             "exp_2": exp_id_2,
             "dataset": dataset,
             "metric": metric,
-            "mean_diff": data2.mean() - data1.mean(),
+            "mean_diff": np.asarray(data2).mean() - np.asarray(data1).mean(),
             "t_statistic": t_stat,
             "p_value": p_value,
             "is_significant": p_value < alpha,
-            "effect_size_cohen_d": (data2.mean() - data1.mean()) / pooled_std if pooled_std else 0.0,
+            "effect_size_cohen_d": (np.asarray(data2).mean() - np.asarray(data1).mean()) / pooled_std if pooled_std else 0.0,
         }

@@ -26,7 +26,7 @@ Definisikan hipotesis contoh:
 
 - H1: SMOTE menaikkan PR-AUC/Recall dibanding None (train-only).
 - H2: CTGAN (tabular GAN) menambah lift di dataset dengan fitur campuran dibanding SMOTE.
-- H3: GNN mengungguli model tabular saat relasi antare ntitas relevan.
+- H3: GNN mengungguli model tabular saat relasi antar entitas relevan.
 - H4: Kalibrasi (Temperature/Platt/Isotonic) memperbaiki ECE/Brier dan menstabilkan Recall@Precision≥P₀.
 
 ### 2.2 Kunci protokol anti-bias
