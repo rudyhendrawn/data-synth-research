@@ -80,7 +80,7 @@ class AblationStudyManager:
                         "XGBoost",
                         "MLP",
                     ],
-                    baseline="XGBoost",
+                    baseline="LogisticRegression",
                     description="Base classifier architecture",
                 ),
                 "calibration": AblationComponent(
@@ -181,14 +181,24 @@ class AblationStudyManager:
         logger.info("Generated %s factorial experiments", len(experiments))
         return experiments
 
-    def save_experiments(self, experiments: List[AblationExperiment], filename: str) -> None:
+    def save_experiments(
+        self,
+        experiments: List[AblationExperiment],
+        filename: str,
+        dataset_tag: Optional[str] = None,
+        experiment_tag: Optional[str] = None,
+    ) -> None:
         """Save experiment configurations to JSON."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if filename.endswith(".json"):
-            base = filename[:-5]
-            filename = f"{base}_{timestamp}.json"
+        dataset_tag = (dataset_tag or "all_datasets").replace(".csv", "")
+        if experiment_tag:
+            filename = f"{dataset_tag}_{experiment_tag}_{timestamp}.json"
         else:
-            filename = f"{filename}_{timestamp}.json"
+            if filename.endswith(".json"):
+                base = filename[:-5]
+                filename = f"{dataset_tag}_{base}_{timestamp}.json"
+            else:
+                filename = f"{dataset_tag}_{filename}_{timestamp}.json"
 
         filepath = os.path.join(self.output_dir, filename)
         payload = {

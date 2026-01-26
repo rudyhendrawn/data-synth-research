@@ -247,7 +247,13 @@ class CrossDomainBenchmark:
 
         return metrics
 
-    def run_ablation_study(self, experiments: List[AblationExperiment], project_root: str) -> pd.DataFrame:
+    def run_ablation_study(
+        self,
+        experiments: List[AblationExperiment],
+        project_root: str,
+        experiment_tag: Optional[str] = None,
+        dataset_tag: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         Run ablation study across datasets and seeds.
         """
@@ -293,7 +299,11 @@ class CrossDomainBenchmark:
 
         results_df = pd.DataFrame(all_results)
         timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-        results_path = os.path.join(self.output_dir, f"ablation_results_{timestamp}.csv")
+        dataset_tag = (dataset_tag or "all_datasets").replace(".csv", "")
+        experiment_tag = experiment_tag or "ablation"
+        results_path = os.path.join(
+            self.output_dir, f"{dataset_tag}_{experiment_tag}_{timestamp}.csv"
+        )
         results_df.to_csv(results_path, index=False)
         logger.info("\nResults saved to %s", results_path)
 

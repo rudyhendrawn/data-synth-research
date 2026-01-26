@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-01-26T12:33:09.629659",
+  "generated_at": "2026-01-26T18:30:00.989859",
   "experiments": [
     {
       "exp_id": "ablation_calibration_None",
       "components": {
         "oversampling": "None",
         "anomaly_signal": "None",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "None"
       },
       "description": "Ablate calibration: None"
@@ -16,7 +16,7 @@
       "components": {
         "oversampling": "None",
         "anomaly_signal": "None",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "Platt"
       },
       "description": "Ablate calibration: Platt"
@@ -26,7 +26,7 @@
       "components": {
         "oversampling": "None",
         "anomaly_signal": "None",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "Isotonic"
       },
       "description": "Ablate calibration: Isotonic"

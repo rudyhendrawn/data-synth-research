@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-01-26T12:33:09.629763",
+  "generated_at": "2026-01-26T18:30:00.989517",
   "experiments": [
     {
       "exp_id": "ablation_anomaly_signal_None",
       "components": {
         "oversampling": "None",
         "anomaly_signal": "None",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "None"
       },
       "description": "Ablate anomaly_signal: None"
@@ -16,7 +16,7 @@
       "components": {
         "oversampling": "None",
         "anomaly_signal": "IsolationForest",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "None"
       },
       "description": "Ablate anomaly_signal: IsolationForest"
@@ -26,7 +26,7 @@
       "components": {
         "oversampling": "None",
         "anomaly_signal": "LOF",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "None"
       },
       "description": "Ablate anomaly_signal: LOF"
@@ -36,7 +36,7 @@
       "components": {
         "oversampling": "None",
         "anomaly_signal": "Autoencoder",
-        "model": "XGBoost",
+        "model": "LogisticRegression",
         "calibration": "None"
       },
       "description": "Ablate anomaly_signal: Autoencoder"

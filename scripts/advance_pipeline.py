@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 import subprocess
+from datetime import datetime
+
 import pandas as pd
 
 # Configure logging
@@ -28,6 +30,7 @@ from evaluation.evaluation import evaluate_models_to_dataframe
 from evaluation.synth_eval import evaluate_synthetic_data, extract_synthetic_tail
 from loader.data_loader import UniversalDataLoader
 from preprocessor.data_config import DATASET_CONFIG
+from benchmark import AblationAnalyzer, AblationStudyManager, CrossDomainBenchmark
 
 try:
     subprocess.run(['brew', 'install', 'libomp'], check=True, capture_output=True)
@@ -39,7 +42,7 @@ except FileNotFoundError:
 
 # === DATASET SELECTION ===
 # Change this to switch datasets
-DATASET_NAME = '05_online_payment.csv' # or '01_creditcard.csv', '03_fraud_oracle.csv', '04_bank_account.csv', '05_online_payment.csv'
+DATASET_NAME = '03_fraud_oracle.csv' # or '01_creditcard.csv', '03_fraud_oracle.csv', '04_bank_account.csv', '05_online_payment.csv'
 DATA_ROOT = "/Users/rudyhendrawan/Projects/data"
 logger.info(f"Loading dataset: {DATASET_CONFIG[DATASET_NAME]['name']}")
 
@@ -47,6 +50,11 @@ logger.info(f"Loading dataset: {DATASET_CONFIG[DATASET_NAME]['name']}")
 USE_ANOMALY_FEATURES = True
 ANOMALY_METHOD = "IsolationForest"  # None, IsolationForest, LOF, Autoencoder
 ANOMALY_CONTAMINATION = 0.01
+
+# === FULL ABLATION (SINGLE DATASET) ===
+RUN_FULL_ABLATION_SINGLE_DATASET = True
+FULL_ABLATION_RANDOM_SEEDS = [42]
+FULL_ABLATION_RUN_SIGNIFICANCE = True
 
 # === LOAD AND PREPROCESS DATA ===
 loader = UniversalDataLoader(
@@ -56,6 +64,205 @@ loader = UniversalDataLoader(
     verbose=True,
     large_data=False # For large datasets e.g. 04_bank_account.csv, use chunking
 )
+
+if RUN_FULL_ABLATION_SINGLE_DATASET:
+    logger.info("Running full ablation (pairwise oversampling × model) on a single dataset.")
+    dataset_label = DATASET_CONFIG[DATASET_NAME]["name"]
+    datasets = {dataset_label: DATASET_NAME}
+    dataset_tag = DATASET_NAME.replace(".csv", "")
+    ablation_mgr = AblationStudyManager(output_dir="results/ablation")
+    exp_oversampling = ablation_mgr.generate_single_factor_ablation("oversampling")
+    exp_model = ablation_mgr.generate_single_factor_ablation("model")
+    exp_anomaly = ablation_mgr.generate_single_factor_ablation("anomaly_signal")
+    exp_calibration = ablation_mgr.generate_single_factor_ablation("calibration")
+    exp_pairwise = ablation_mgr.generate_pairwise_ablation("oversampling", "model")
+
+    ablation_mgr.save_experiments(
+        exp_oversampling,
+        "ablation_oversampling_single_dataset.json",
+        dataset_tag=dataset_tag,
+        experiment_tag="ablation_oversampling_single_dataset",
+    )
+    ablation_mgr.save_experiments(
+        exp_model,
+        "ablation_model_single_dataset.json",
+        dataset_tag=dataset_tag,
+        experiment_tag="ablation_model_single_dataset",
+    )
+    ablation_mgr.save_experiments(
+        exp_anomaly,
+        "ablation_anomaly_single_dataset.json",
+        dataset_tag=dataset_tag,
+        experiment_tag="ablation_anomaly_single_dataset",
+    )
+    ablation_mgr.save_experiments(
+        exp_calibration,
+        "ablation_calibration_single_dataset.json",
+        dataset_tag=dataset_tag,
+        experiment_tag="ablation_calibration_single_dataset",
+    )
+    ablation_mgr.save_experiments(
+        exp_pairwise,
+        "ablation_pairwise_single_dataset.json",
+        dataset_tag=dataset_tag,
+        experiment_tag="ablation_pairwise_single_dataset",
+    )
+
+    benchmark = CrossDomainBenchmark(
+        datasets=datasets,
+        output_dir="results/cross_domain",
+        random_seeds=FULL_ABLATION_RANDOM_SEEDS,
+        data_root=DATA_ROOT,
+        precision_target=0.9,
+        fpr_target=0.05,
+        threshold_strategy="precision",
+        bootstrap_samples=2000,
+    )
+    oversampling_df = benchmark.run_ablation_study(
+        exp_oversampling,
+        project_root,
+        experiment_tag="ablation_oversampling_single_dataset",
+        dataset_tag=dataset_tag,
+    )
+    model_df = benchmark.run_ablation_study(
+        exp_model,
+        project_root,
+        experiment_tag="ablation_model_single_dataset",
+        dataset_tag=dataset_tag,
+    )
+    anomaly_df = benchmark.run_ablation_study(
+        exp_anomaly,
+        project_root,
+        experiment_tag="ablation_anomaly_single_dataset",
+        dataset_tag=dataset_tag,
+    )
+    calibration_df = benchmark.run_ablation_study(
+        exp_calibration,
+        project_root,
+        experiment_tag="ablation_calibration_single_dataset",
+        dataset_tag=dataset_tag,
+    )
+    benchmark.run_ablation_study(
+        exp_pairwise,
+        project_root,
+        experiment_tag="ablation_pairwise_single_dataset",
+        dataset_tag=dataset_tag,
+    )
+
+    if FULL_ABLATION_RUN_SIGNIFICANCE:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dataset_keys = list(datasets.keys())
+
+        # Oversampling vs None
+        oversampling_analyzer = AblationAnalyzer(oversampling_df)
+        oversampling_baseline = "ablation_oversampling_None"
+        oversampling_results = []
+        oversampling_map = {exp.exp_id: exp.components for exp in exp_oversampling}
+        for exp in exp_oversampling:
+            if exp.exp_id == oversampling_baseline:
+                continue
+            for dataset in dataset_keys:
+                res = oversampling_analyzer.statistical_significance_test(
+                    exp_id_1=oversampling_baseline,
+                    exp_id_2=exp.exp_id,
+                    dataset=dataset,
+                    metric="pr_auc",
+                )
+                res["threshold_strategy"] = benchmark.threshold_strategy
+                res["precision_target"] = benchmark.precision_target
+                res["fpr_target"] = benchmark.fpr_target
+                res["exp_1_components"] = oversampling_map.get(res["exp_1"], {})
+                res["exp_2_components"] = oversampling_map.get(res["exp_2"], {})
+                oversampling_results.append(res)
+        if oversampling_results:
+            pd.DataFrame(oversampling_results).to_csv(
+                os.path.join(DATASET_NAME, "results", "ablation", f"significance_oversampling_single_{timestamp}.csv"),
+                index=False,
+            )
+
+        # Model vs baselines
+        model_analyzer = AblationAnalyzer(model_df)
+        model_baselines = ["ablation_model_LogisticRegression", "ablation_model_DecisionTree"]
+        model_results = []
+        model_map = {exp.exp_id: exp.components for exp in exp_model}
+        for exp in exp_model:
+            if exp.exp_id in model_baselines:
+                continue
+            for baseline in model_baselines:
+                for dataset in dataset_keys:
+                    res = model_analyzer.statistical_significance_test(
+                        exp_id_1=baseline,
+                        exp_id_2=exp.exp_id,
+                        dataset=dataset,
+                        metric="pr_auc",
+                    )
+                    res["threshold_strategy"] = benchmark.threshold_strategy
+                    res["precision_target"] = benchmark.precision_target
+                    res["fpr_target"] = benchmark.fpr_target
+                    res["exp_1_components"] = model_map.get(res["exp_1"], {})
+                    res["exp_2_components"] = model_map.get(res["exp_2"], {})
+                    model_results.append(res)
+        if model_results:
+            pd.DataFrame(model_results).to_csv(
+                os.path.join("results", "ablation", f"significance_models_single_{timestamp}.csv"),
+                index=False,
+            )
+
+        # Anomaly vs None
+        anomaly_analyzer = AblationAnalyzer(anomaly_df)
+        anomaly_baseline = "ablation_anomaly_signal_None"
+        anomaly_results = []
+        anomaly_map = {exp.exp_id: exp.components for exp in exp_anomaly}
+        for exp in exp_anomaly:
+            if exp.exp_id == anomaly_baseline:
+                continue
+            for dataset in dataset_keys:
+                res = anomaly_analyzer.statistical_significance_test(
+                    exp_id_1=anomaly_baseline,
+                    exp_id_2=exp.exp_id,
+                    dataset=dataset,
+                    metric="pr_auc",
+                )
+                res["threshold_strategy"] = benchmark.threshold_strategy
+                res["precision_target"] = benchmark.precision_target
+                res["fpr_target"] = benchmark.fpr_target
+                res["exp_1_components"] = anomaly_map.get(res["exp_1"], {})
+                res["exp_2_components"] = anomaly_map.get(res["exp_2"], {})
+                anomaly_results.append(res)
+        if anomaly_results:
+            pd.DataFrame(anomaly_results).to_csv(
+                os.path.join("results", "ablation", f"significance_anomaly_single_{timestamp}.csv"),
+                index=False,
+            )
+
+        # Calibration vs None
+        calib_analyzer = AblationAnalyzer(calibration_df)
+        calib_baseline = "ablation_calibration_None"
+        calib_results = []
+        calib_map = {exp.exp_id: exp.components for exp in exp_calibration}
+        for exp in exp_calibration:
+            if exp.exp_id == calib_baseline:
+                continue
+            for dataset in dataset_keys:
+                res = calib_analyzer.statistical_significance_test(
+                    exp_id_1=calib_baseline,
+                    exp_id_2=exp.exp_id,
+                    dataset=dataset,
+                    metric="pr_auc",
+                )
+                res["threshold_strategy"] = benchmark.threshold_strategy
+                res["precision_target"] = benchmark.precision_target
+                res["fpr_target"] = benchmark.fpr_target
+                res["exp_1_components"] = calib_map.get(res["exp_1"], {})
+                res["exp_2_components"] = calib_map.get(res["exp_2"], {})
+                calib_results.append(res)
+        if calib_results:
+            pd.DataFrame(calib_results).to_csv(
+                os.path.join("results", "ablation", f"significance_calibration_single_{timestamp}.csv"),
+                index=False,
+            )
+
+    raise SystemExit(0)
 
 X_train, X_val, X_test, y_train, y_val, y_test, preprocessor = loader.train_val_test_split()
 logger.info(f"Data Training: {X_train.shape}, {y_train.shape}")
@@ -153,40 +360,3 @@ if synth_eval_rows:
     )
     synth_eval_df.to_csv(synth_eval_path, index=False)
     logger.info("Synthetic evaluation saved to %s", synth_eval_path)
-
-# === MODEL TRAINING ===
-params = {
-    'n_estimators': 300,
-    'max_depth': 5,
-    'learning_rate': 0.05,
-    'subsample': 0.8,
-    'colsample_bytree': 0.8,
-    'scale_pos_weight': (len(y_train) / y_train.sum()),
-}
-
-training_data = {
-    'Baseline XGB': (X_train, y_train),
-    'XGB with SMOTE': (X_train_smote, y_train_smote),
-    'XGB with Borderline SMOTE': (X_train_blsmote, y_train_blsmote),
-    'XGB with SMOTEENN': (X_train_smoteenn, y_train_smoteenn),
-    'XGB with PyTorch GAN': (X_train_gan, y_train_gan),
-    'XGB with CTGAN': (X_train_ctgan, y_train_ctgan),
-    'XGB with Conditional WGAN-GP': (X_train_cwgangp, y_train_cwgangp),
-}
-
-logger.info("Training models")
-models_dict = {}
-for model_name, (X, y) in training_data.items():
-    logger.info(f"Training {model_name}")
-    model = XGBClassifier(**params, use_label_encoder=False, random_state=random_state)
-    model.fit(X, y)
-    models_dict[model_name] = model
-
-# === EVALUATION ===
-logger.info("Evaluating models")
-results_df = evaluate_models_to_dataframe(models_dict, X_test, y_test)
-
-# === SAVE RESULTS ===
-results_path = os.path.join(project_root, 'results', f'xgb_{DATASET_NAME.replace(".csv", "")}_{epochs}_results.csv')
-results_df.to_csv(results_path, index=False)
-logger.info(f"Results saved to {results_path}")
