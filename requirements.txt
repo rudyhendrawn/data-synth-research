@@ -1,0 +1,11 @@
+imbalanced-learn
+matplotlib
+numpy
+pandas
+scikit-learn
+scipy
+seaborn
+torch
+torchinfo
+xgboost
+sdv
