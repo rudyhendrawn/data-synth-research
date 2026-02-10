@@ -1,3 +1,6 @@
+import json
+import hashlib
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -79,7 +82,17 @@ class SimplifiedCTGAN:
         
         return gradient_penalty
     
-    def train(self, minority_data, epochs=500, batch_size=64, print_interval=100, n_critic=5):
+    def train(
+        self,
+        minority_data,
+        epochs=500,
+        batch_size=64,
+        print_interval=100,
+        n_critic=5,
+        early_stopping: bool = False,
+        early_stopping_patience: int = 10,
+        early_stopping_delta: float = 1e-3,
+    ):
         # Scale data
         minority_data_scaled = self.scaler.fit_transform(minority_data)
         minority_tensor = torch.FloatTensor(minority_data_scaled).to(self.device)
@@ -87,6 +100,21 @@ class SimplifiedCTGAN:
 
         gen_losses = []
         disc_losses = []
+
+        def _is_stable() -> bool:
+            if not early_stopping:
+                return False
+            if len(gen_losses) < (early_stopping_patience + 1):
+                return False
+            gen_diffs = [
+                abs(gen_losses[-i] - gen_losses[-i - 1])
+                for i in range(1, early_stopping_patience + 1)
+            ]
+            disc_diffs = [
+                abs(disc_losses[-i] - disc_losses[-i - 1])
+                for i in range(1, early_stopping_patience + 1)
+            ]
+            return max(gen_diffs) < early_stopping_delta and max(disc_diffs) < early_stopping_delta
 
         for epoch in range(epochs):
             epoch_gen_loss = 0.0
@@ -122,7 +150,6 @@ class SimplifiedCTGAN:
                 noise = torch.randn(current_batch_size, self.noise_dim).to(self.device)
                 fake_data = self.generator(noise)
                 fake_validity = self.discriminator(fake_data)
-
                 gen_loss = -torch.mean(fake_validity)
                 gen_loss.backward()
                 self.gen_optimizer.step()
@@ -136,6 +163,12 @@ class SimplifiedCTGAN:
             # Print progress every print_interval epochs
             if (epoch + 1) % print_interval == 0:
                 print(f"Epoch [{epoch + 1}/{epochs}], Gen Loss: {gen_losses[-1]:.4f}, Disc Loss: {disc_losses[-1]:.4f}")
+            if _is_stable():
+                print(
+                    f"Early stopping at epoch {epoch + 1} "
+                    f"(Δ< {early_stopping_delta} for {early_stopping_patience} epochs)"
+                )
+                break
 
         return gen_losses, disc_losses
     
@@ -152,7 +185,25 @@ class SimplifiedCTGAN:
         return synthetic_data_inv
     
 # Simplified CTGAN-based oversampling function
-def oversample_with_ctgan(X_train, y_train, target_class=1, oversample_ratio=1.0, epochs=500, batch_size=64):
+def oversample_with_ctgan(
+    X_train,
+    y_train,
+    target_class=1,
+    oversample_ratio=1.0,
+    epochs=100,
+    batch_size=128,
+    noise_dim: int = 100,
+    hidden_dim: int = 128,
+    lr: float = 0.0002,
+    n_critic: int = 5,
+    train_max_minority_ratio: float = 1.0,
+    early_stopping: bool = False,
+    early_stopping_patience: int = 10,
+    early_stopping_delta: float = 1e-3,
+    cache_path: str | None = None,
+    cache_tag: str | None = None,
+    seed: int = 42,
+):
     """
     Oversample minority class using simplified CTGAN.
 
@@ -190,6 +241,51 @@ def oversample_with_ctgan(X_train, y_train, target_class=1, oversample_ratio=1.0
     if n_generate <= 0:
         print("No oversampling needed")
         return X_train, y_train, [], []
+
+    if 0 < train_max_minority_ratio < 1.0:
+        n_keep = max(1, int(n_minority * train_max_minority_ratio))
+        rng = np.random.default_rng(seed)
+        idx = rng.choice(n_minority, size=n_keep, replace=False)
+        minority_data_train = minority_data[idx]
+    else:
+        minority_data_train = minority_data
+
+    def _cache_paths():
+        if not cache_path:
+            return None, None
+        os.makedirs(cache_path, exist_ok=True)
+        payload = json.dumps(
+            {
+                "method": "ctgan",
+                "target_class": target_class,
+                "oversample_ratio": oversample_ratio,
+                "n_generate": n_generate,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "noise_dim": noise_dim,
+                "hidden_dim": hidden_dim,
+                "n_critic": n_critic,
+                "train_max_minority_ratio": train_max_minority_ratio,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+        digest = hashlib.sha1(payload).hexdigest()[:10]
+        tag = cache_tag or "dataset"
+        base = f"{tag}_ctgan_{digest}"
+        return (
+            os.path.join(cache_path, f"{base}_X.npy"),
+            os.path.join(cache_path, f"{base}_y.npy"),
+        )
+
+    cache_x_path, cache_y_path = _cache_paths()
+    if cache_x_path and cache_y_path and os.path.exists(cache_x_path) and os.path.exists(cache_y_path):
+        cached_x = np.load(cache_x_path)
+        cached_y = np.load(cache_y_path)
+        if len(cached_x) == n_generate:
+            print(f"Loaded cached synthetic samples from {cache_x_path}")
+            X_balanced = np.vstack([X_np, cached_x])
+            y_balanced = np.concatenate([np.asarray(y_np), cached_y])
+            return X_balanced, y_balanced, [], []
     
     # Setup device
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'
@@ -198,24 +294,35 @@ def oversample_with_ctgan(X_train, y_train, target_class=1, oversample_ratio=1.0
     # Initialize and train CTGAN oversampler
     ctgan_oversampler = SimplifiedCTGAN(
         data_dim=minority_data.shape[1],
-        noise_dim=100,
-        hidden_dim=128,
-        lr=0.0002,
+        noise_dim=noise_dim,
+        hidden_dim=hidden_dim,
+        lr=lr,
         device=device
     )
 
-    print(f"Training Simplified CTGAN for {epochs} epochs...")
+    print(
+        f"Training Simplified CTGAN for {epochs} epochs "
+        f"(n_critic={n_critic}, early_stopping={early_stopping}, batch_size={batch_size})..."
+    )
     gen_losses, disc_losses = ctgan_oversampler.train(
-        minority_data, 
+        minority_data_train, 
         epochs=epochs, 
         batch_size=batch_size, 
-        print_interval=100
+        print_interval=100,
+        n_critic=n_critic,
+        early_stopping=early_stopping,
+        early_stopping_patience=early_stopping_patience,
+        early_stopping_delta=early_stopping_delta,
     )
 
     # Generate synthetic samples
     print(f"Generating {n_generate} synthetic samples...")
     synthetic_samples = ctgan_oversampler.generate_samples(n_generate)
     synthetic_labels = np.full(n_generate, target_class, dtype=np.int64)
+    if cache_x_path and cache_y_path:
+        np.save(cache_x_path, synthetic_samples)
+        np.save(cache_y_path, synthetic_labels)
+        print(f"Saved synthetic samples to {cache_x_path}")
 
     # Combine data
     X_balanced = np.vstack([X_np, synthetic_samples])

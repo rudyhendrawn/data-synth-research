@@ -21,12 +21,10 @@ logger = logging.getLogger(__name__)
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE, BorderlineSMOTE
 from imblearn.combine import SMOTEENN
 from model import oversample_with_pytorch_gan, oversample_with_ctgan, oversample_with_cond_wgangp
 from model.anomaly import add_anomaly_scores
-from evaluation.evaluation import evaluate_models_to_dataframe
 from evaluation.synth_eval import evaluate_synthetic_data, extract_synthetic_tail
 from loader.data_loader import UniversalDataLoader
 from preprocessor.data_config import DATASET_CONFIG
@@ -42,7 +40,7 @@ except FileNotFoundError:
 
 # === DATASET SELECTION ===
 # Change this to switch datasets
-DATASET_NAME = '03_fraud_oracle.csv' # or '01_creditcard.csv', '03_fraud_oracle.csv', '04_bank_account.csv', '05_online_payment.csv'
+DATASET_NAME = '05_online_payment.csv' # or '01_creditcard.csv', '03_fraud_oracle.csv', '04_bank_account.csv', '05_online_payment.csv'
 DATA_ROOT = "/Users/rudyhendrawan/Projects/data"
 logger.info(f"Loading dataset: {DATASET_CONFIG[DATASET_NAME]['name']}")
 
@@ -55,6 +53,18 @@ ANOMALY_CONTAMINATION = 0.01
 RUN_FULL_ABLATION_SINGLE_DATASET = True
 FULL_ABLATION_RANDOM_SEEDS = [42]
 FULL_ABLATION_RUN_SIGNIFICANCE = True
+
+# === GAN OVERSAMPLING OPTIMIZATION ===
+GAN_TRAIN_MAX_MINORITY_RATIO = 0.5
+GAN_HIDDEN_DIM = 64
+GAN_NOISE_DIM = 50
+GAN_N_CRITIC = 2
+GAN_EPOCHS = 100
+GAN_BATCH_SIZE = 128
+GAN_CACHE_PATH = os.path.join(project_root, "results", "synthetic_cache")
+GAN_EARLY_STOPPING = True
+GAN_EARLY_STOPPING_PATIENCE = 10
+GAN_EARLY_STOPPING_DELTA = 1e-3
 
 # === LOAD AND PREPROCESS DATA ===
 loader = UniversalDataLoader(
@@ -302,13 +312,25 @@ smote_enn = SMOTEENN(random_state=random_state)
 X_train_smoteenn, y_train_smoteenn, *_ = smote_enn.fit_resample(X_train, y_train)
 logger.info(f"SMOTEENN - Class distribution: {y_train_smoteenn.value_counts().to_dict()}")
 
-epochs = 500
-batch_size = 64
+gan_dataset_tag = DATASET_NAME.replace(".csv", "")
 
 # 4. PyTorch GAN
 logger.info("Training PyTorch GAN")
 X_train_gan, y_train_gan, gen_losses, disc_losses = oversample_with_pytorch_gan(
-    X_train, y_train, target_class=1, oversample_ratio=1.0, epochs=epochs, batch_size=batch_size
+    X_train,
+    y_train,
+    target_class=1,
+    oversample_ratio=1.0,
+    epochs=GAN_EPOCHS,
+    batch_size=GAN_BATCH_SIZE,
+    noise_dim=GAN_NOISE_DIM,
+    hidden_dim=GAN_HIDDEN_DIM,
+    train_max_minority_ratio=GAN_TRAIN_MAX_MINORITY_RATIO,
+    early_stopping=GAN_EARLY_STOPPING,
+    early_stopping_patience=GAN_EARLY_STOPPING_PATIENCE,
+    early_stopping_delta=GAN_EARLY_STOPPING_DELTA,
+    cache_path=GAN_CACHE_PATH,
+    cache_tag=gan_dataset_tag,
 )
 logger.info(f"PyTorch GAN - Class distribution: {pd.Series(y_train_gan).value_counts().to_dict()}")
 gan_syn_X, gan_syn_y = extract_synthetic_tail(X_train, X_train_gan, y_train, y_train_gan)
@@ -316,7 +338,21 @@ gan_syn_X, gan_syn_y = extract_synthetic_tail(X_train, X_train_gan, y_train, y_t
 # 5. CTGAN
 logger.info("Training CTGAN")
 X_train_ctgan, y_train_ctgan, gen_losses_ctgan, disc_losses_ctgan = oversample_with_ctgan(
-    X_train, y_train, target_class=1, oversample_ratio=1.0, epochs=epochs, batch_size=batch_size
+    X_train,
+    y_train,
+    target_class=1,
+    oversample_ratio=1.0,
+    epochs=GAN_EPOCHS,
+    batch_size=GAN_BATCH_SIZE,
+    noise_dim=GAN_NOISE_DIM,
+    hidden_dim=GAN_HIDDEN_DIM,
+    n_critic=GAN_N_CRITIC,
+    train_max_minority_ratio=GAN_TRAIN_MAX_MINORITY_RATIO,
+    early_stopping=GAN_EARLY_STOPPING,
+    early_stopping_patience=GAN_EARLY_STOPPING_PATIENCE,
+    early_stopping_delta=GAN_EARLY_STOPPING_DELTA,
+    cache_path=GAN_CACHE_PATH,
+    cache_tag=gan_dataset_tag,
 )
 logger.info(f"CTGAN - Class distribution: {pd.Series(y_train_ctgan).value_counts().to_dict()}")
 ctgan_syn_X, ctgan_syn_y = extract_synthetic_tail(X_train, X_train_ctgan, y_train, y_train_ctgan)
@@ -324,7 +360,21 @@ ctgan_syn_X, ctgan_syn_y = extract_synthetic_tail(X_train, X_train_ctgan, y_trai
 # 6. Conditional WGAN-GP
 logger.info("Training Conditional WGAN-GP")
 X_train_cwgangp, y_train_cwgangp, gen_losses_cwgangp, disc_losses_cwgangp = oversample_with_cond_wgangp(
-    X_train, y_train, target_class=1, target_ratio=1.0, epochs=epochs, batch_size=batch_size
+    X_train,
+    y_train,
+    target_class=1,
+    target_ratio=1.0,
+    epochs=GAN_EPOCHS,
+    batch_size=GAN_BATCH_SIZE,
+    noise_dim=GAN_NOISE_DIM,
+    hidden_dim=GAN_HIDDEN_DIM,
+    n_critic=GAN_N_CRITIC,
+    train_max_minority_ratio=GAN_TRAIN_MAX_MINORITY_RATIO,
+    early_stopping=GAN_EARLY_STOPPING,
+    early_stopping_patience=GAN_EARLY_STOPPING_PATIENCE,
+    early_stopping_delta=GAN_EARLY_STOPPING_DELTA,
+    cache_path=GAN_CACHE_PATH,
+    cache_tag=gan_dataset_tag,
 )
 logger.info(f"Conditional WGAN-GP - Class distribution: {pd.Series(y_train_cwgangp).value_counts().to_dict()}")
 cwgan_syn_X, cwgan_syn_y = extract_synthetic_tail(X_train, X_train_cwgangp, y_train, y_train_cwgangp)
@@ -356,7 +406,7 @@ _append_synth_eval("Conditional_WGAN_GP", cwgan_syn_X, cwgan_syn_y)
 if synth_eval_rows:
     synth_eval_df = pd.DataFrame(synth_eval_rows)
     synth_eval_path = os.path.join(
-        project_root, "results", f"synth_eval_{DATASET_NAME.replace('.csv', '')}_{epochs}.csv"
+        project_root, "results", f"synth_eval_{DATASET_NAME.replace('.csv', '')}_{GAN_EPOCHS}.csv"
     )
     synth_eval_df.to_csv(synth_eval_path, index=False)
     logger.info("Synthetic evaluation saved to %s", synth_eval_path)

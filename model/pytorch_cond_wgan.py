@@ -1,6 +1,9 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import json
+import hashlib
+import os
 import numpy as np
 import pandas as pd
 
@@ -211,7 +214,16 @@ class ConditionalWGAN_GP_Tabular:
         
         return grads_pen
 
-    def fit(self, minority_data: np.ndarray, epochs: int = 300, batch_size: int = 64, print_interval: int = 50):
+    def fit(
+        self,
+        minority_data: np.ndarray,
+        epochs: int = 100,
+        batch_size: int = 64,
+        print_interval: int = 50,
+        early_stopping: bool = False,
+        early_stopping_patience: int = 10,
+        early_stopping_delta: float = 1e-3,
+    ):
         """
         Train on minority-only data.
         Uses cluster conditioning derived from KMeans on scaled minority data.
@@ -244,6 +256,20 @@ class ConditionalWGAN_GP_Tabular:
         loader = DataLoader(TensorDataset(X_tensor, y_tensor), batch_size=batch_size, shuffle=True, drop_last=False)
 
         generator_loss_history, discriminator_loss_history = [], []
+        def _is_stable() -> bool:
+            if not early_stopping:
+                return False
+            if len(generator_loss_history) < (early_stopping_patience + 1):
+                return False
+            gen_diffs = [
+                abs(generator_loss_history[-i] - generator_loss_history[-i - 1])
+                for i in range(1, early_stopping_patience + 1)
+            ]
+            disc_diffs = [
+                abs(discriminator_loss_history[-i] - discriminator_loss_history[-i - 1])
+                for i in range(1, early_stopping_patience + 1)
+            ]
+            return max(gen_diffs) < early_stopping_delta and max(disc_diffs) < early_stopping_delta
 
         for epoch in range(1, epochs + 1):
             generator_epoch_loss, discriminator_epoch_loss = 0.0, 0.0
@@ -322,6 +348,12 @@ class ConditionalWGAN_GP_Tabular:
 
             if epoch % print_interval == 0:
                 print(f"[Epoch {epoch:>4}/{epochs}]  G: {generator_loss_history[-1]:.4f}  D: {discriminator_loss_history[-1]:.4f}")
+            if _is_stable():
+                print(
+                    f"Early stopping at epoch {epoch} "
+                    f"(Δ< {early_stopping_delta} for {early_stopping_patience} epochs)"
+                )
+                break
 
         return generator_loss_history, discriminator_loss_history
 
@@ -363,8 +395,18 @@ def oversample_with_cond_wgangp(
     y_train,
     target_class: int = 1,
     target_ratio: float = 1.0,     # 1.0 means match majority size (full balance)
-    epochs: int = 300,
+    epochs: int = 100,
     batch_size: int = 128,
+    noise_dim: int = 128,
+    hidden_dim: int = 256,
+    n_critic: int = 5,
+    train_max_minority_ratio: float = 1.0,
+    early_stopping: bool = False,
+    early_stopping_patience: int = 10,
+    early_stopping_delta: float = 1e-3,
+    cache_path: str | None = None,
+    cache_tag: str | None = None,
+    seed: int = 42,
     n_clusters: int = 8,
     pac: int = 5,
     device_prefer: str = "mps",
@@ -412,36 +454,98 @@ def oversample_with_cond_wgangp(
         
         return X_np, y_np, [], []
 
+    if 0 < train_max_minority_ratio < 1.0:
+        n_keep = max(1, int(n_min * train_max_minority_ratio))
+        rng = np.random.default_rng(seed)
+        idx = rng.choice(n_min, size=n_keep, replace=False)
+        minority_data_train = minority_data[idx]
+    else:
+        minority_data_train = minority_data
+
+    def _cache_paths():
+        if not cache_path:
+            return None, None
+        os.makedirs(cache_path, exist_ok=True)
+        payload = json.dumps(
+            {
+                "method": "cond_wgan_gp",
+                "target_class": target_class,
+                "target_ratio": target_ratio,
+                "n_generate": n_generate,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "noise_dim": noise_dim,
+                "hidden_dim": hidden_dim,
+                "n_critic": n_critic,
+                "train_max_minority_ratio": train_max_minority_ratio,
+                "n_clusters": n_clusters,
+                "pac": pac,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+        digest = hashlib.sha1(payload).hexdigest()[:10]
+        tag = cache_tag or "dataset"
+        base = f"{tag}_cond_wgan_gp_{digest}"
+        return (
+            os.path.join(cache_path, f"{base}_X.npy"),
+            os.path.join(cache_path, f"{base}_y.npy"),
+        )
+
+    cache_x_path, cache_y_path = _cache_paths()
+    if cache_x_path and cache_y_path and os.path.exists(cache_x_path) and os.path.exists(cache_y_path):
+        cached_x = np.load(cache_x_path)
+        cached_y = np.load(cache_y_path)
+        if len(cached_x) == n_generate:
+            print(f"Loaded cached synthetic samples from {cache_x_path}")
+            X_bal = np.vstack((X_np, cached_x))
+            y_bal = np.concatenate((np.asarray(y_np, dtype=np.int64), cached_y))
+            return X_bal, y_bal, [], []
+
     device = get_device(prefer=device_prefer)
     print(f"Using device: {device}")
 
     model = ConditionalWGAN_GP_Tabular(
         data_dim=minority_data.shape[1],
-        noise_dim=128,
-        hidden_dim=256,
+        noise_dim=noise_dim,
+        hidden_dim=hidden_dim,
         lr_g=2e-4,
         lr_d=2e-4,
         betas=(0.0, 0.9),
-        n_critic=5,
+        n_critic=n_critic,
         lambda_gp=10.0,
         pac=pac,
         n_clusters=n_clusters,
         device=device,
         feature_matching=True,
         fm_lambda=1.0,
-        seed=42,
+        seed=seed,
     )
 
     # minority-aware batch sizing (very important in your setup)
     bs = min(batch_size, n_min)
     bs = max(32, bs) if n_min >= 32 else n_min
 
-    print(f"Training Conditional WGAN-GP (clusters={n_clusters}, pac={pac}, batch_size={bs}) for {epochs} epochs...")
-    generator_loss_history, discriminator_loss_history = model.fit(minority_data, epochs=epochs, batch_size=bs, print_interval=50)
+    print(
+        f"Training Conditional WGAN-GP (clusters={n_clusters}, pac={pac}, batch_size={bs}) "
+        f"for {epochs} epochs (n_critic={n_critic}, early_stopping={early_stopping})..."
+    )
+    generator_loss_history, discriminator_loss_history = model.fit(
+        minority_data_train,
+        epochs=epochs,
+        batch_size=bs,
+        print_interval=50,
+        early_stopping=early_stopping,
+        early_stopping_patience=early_stopping_patience,
+        early_stopping_delta=early_stopping_delta,
+    )
 
     print(f"Generating {n_generate} synthetic samples...")
     synthetic = model.sample(n_generate, cluster_prior="empirical")
     synth_labels = np.full(n_generate, target_class, dtype=np.int64)
+    if cache_x_path and cache_y_path:
+        np.save(cache_x_path, synthetic)
+        np.save(cache_y_path, synth_labels)
+        print(f"Saved synthetic samples to {cache_x_path}")
 
     X_bal = np.vstack((X_np, synthetic))
     y_bal = np.concatenate((np.asarray(y_np, dtype=np.int64), synth_labels))

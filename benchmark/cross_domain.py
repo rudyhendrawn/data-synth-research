@@ -433,21 +433,21 @@ class CrossDomainBenchmark:
             from model import oversample_with_pytorch_gan
 
             X_res, y_res, _, _ = oversample_with_pytorch_gan(
-                X, y, target_class=1, oversample_ratio=1.0, epochs=300, batch_size=128
+                X, y, target_class=1, oversample_ratio=1.0, epochs=100, batch_size=128
             )
             return X_res, y_res
         if method == "CTGAN":
             from model import oversample_with_ctgan
 
             X_res, y_res, _, _ = oversample_with_ctgan(
-                X, y, target_class=1, oversample_ratio=1.0, epochs=300, batch_size=128
+                X, y, target_class=1, oversample_ratio=1.0, epochs=100, batch_size=128
             )
             return X_res, y_res
         if method == "ConditionalWGAN-GP":
             from model import oversample_with_cond_wgangp
 
             X_res, y_res, _, _ = oversample_with_cond_wgangp(
-                X, y, target_class=1, target_ratio=1.0, epochs=300, batch_size=128
+                X, y, target_class=1, target_ratio=1.0, epochs=100, batch_size=128
             )
             return X_res, y_res
 
