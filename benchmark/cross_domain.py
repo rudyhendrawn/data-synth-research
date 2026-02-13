@@ -487,11 +487,23 @@ class CrossDomainBenchmark:
         raise ValueError(f"Unknown model: {model_name}")
 
     def _apply_calibration(self, model, X_val, y_val, method: str):
-        if method == "Platt":
-            return CalibratedClassifierCV(model, method="sigmoid", cv="prefit").fit(X_val, y_val)
-        if method == "Isotonic":
-            return CalibratedClassifierCV(model, method="isotonic", cv="prefit").fit(X_val, y_val)
-        return model
+        method_map = {
+            "Platt": "sigmoid",
+            "Isotonic": "isotonic",
+        }
+        calibrated_method = method_map.get(method)
+        if calibrated_method is None:
+            return model
+
+        # sklearn new API: use FrozenEstimator for prefit calibration.
+        try:
+            from sklearn.frozen import FrozenEstimator  # type: ignore
+        except ImportError:
+            # sklearn old API: still supports cv="prefit".
+            return CalibratedClassifierCV(model, method=calibrated_method, cv="prefit").fit(X_val, y_val)
+
+        frozen = FrozenEstimator(model)
+        return CalibratedClassifierCV(frozen, method=calibrated_method, cv=None).fit(X_val, y_val)
 
     @staticmethod
     def _compute_scale_pos_weight(y) -> float:
