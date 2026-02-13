@@ -17,11 +17,21 @@ from sklearn.cluster import KMeans
 
 
 # Utilities
-def get_device(prefer="mps"):
-    if prefer == "mps" and torch.backends.mps.is_available():
-        return "mps"
-    
-    return "cuda" if torch.cuda.is_available() else "cpu"
+def get_device(prefer: str | None = None) -> str:
+    order = []
+    if prefer in {"cuda", "mps", "cpu"}:
+        order.append(prefer)
+    for candidate in ("cuda", "mps", "cpu"):
+        if candidate not in order:
+            order.append(candidate)
+    for candidate in order:
+        if candidate == "cuda" and torch.cuda.is_available():
+            return "cuda"
+        if candidate == "mps" and torch.backends.mps.is_available():
+            return "mps"
+        if candidate == "cpu":
+            return "cpu"
+    return "cpu"
 
 
 def one_hot(indices: torch.Tensor, num_classes: int) -> torch.Tensor:
@@ -409,7 +419,7 @@ def oversample_with_cond_wgangp(
     seed: int = 42,
     n_clusters: int = 8,
     pac: int = 5,
-    device_prefer: str = "mps",
+    device_prefer: str | None = None,
 ):
     """
     Oversample minority class using cluster-conditional WGAN-GP + PacGAN.

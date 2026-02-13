@@ -1,5 +1,6 @@
-# Dataset directory
+# Dataset and results directory
 data/
+results/
 *.csv
 *.zip
 

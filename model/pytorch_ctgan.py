@@ -11,6 +11,22 @@ from torch.utils.data import DataLoader, TensorDataset
 import warnings
 warnings.filterwarnings('ignore')
 
+def resolve_device(prefer: str | None = None) -> str:
+    order = []
+    if prefer in {"cuda", "mps", "cpu"}:
+        order.append(prefer)
+    for candidate in ("cuda", "mps", "cpu"):
+        if candidate not in order:
+            order.append(candidate)
+    for candidate in order:
+        if candidate == "cuda" and torch.cuda.is_available():
+            return "cuda"
+        if candidate == "mps" and torch.backends.mps.is_available():
+            return "mps"
+        if candidate == "cpu":
+            return "cpu"
+    return "cpu"
+
 # CTGAN-based oversampling function using Pytorch CTGAN
 class CTGANGenerator(nn.Module):
     def __init__(self, noise_dim, data_dim, hidden_dim=128):  # FIX: swap order
@@ -46,7 +62,7 @@ class CTGANDiscriminator(nn.Module):
         return self.network(data)
     
 class SimplifiedCTGAN:
-    def __init__(self, data_dim, noise_dim=100, hidden_dim=128, lr=2e-4, device='mps'):
+    def __init__(self, data_dim, noise_dim=100, hidden_dim=128, lr=2e-4, device='cpu'):
         self.device = device
         self.noise_dim = noise_dim
         self.data_dim = data_dim
@@ -203,6 +219,7 @@ def oversample_with_ctgan(
     cache_path: str | None = None,
     cache_tag: str | None = None,
     seed: int = 42,
+    device_prefer: str | None = None,
 ):
     """
     Oversample minority class using simplified CTGAN.
@@ -288,7 +305,7 @@ def oversample_with_ctgan(
             return X_balanced, y_balanced, [], []
     
     # Setup device
-    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    device = resolve_device(device_prefer)
     print(f"Using device: {device}")
 
     # Initialize and train CTGAN oversampler

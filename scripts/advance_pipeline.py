@@ -40,7 +40,7 @@ except FileNotFoundError:
 
 # === DATASET SELECTION ===
 # Change this to switch datasets
-DATASET_NAME = '05_online_payment.csv' # or '01_creditcard.csv', '03_fraud_oracle.csv', '04_bank_account.csv', '05_online_payment.csv'
+DATASET_NAME = '03_fraud_oracle.csv' # or '01_creditcard.csv', '03_fraud_oracle.csv', '04_bank_account.csv', '05_online_payment.csv'
 DATA_ROOT = "/Users/rudyhendrawan/Projects/data"
 logger.info(f"Loading dataset: {DATASET_CONFIG[DATASET_NAME]['name']}")
 
