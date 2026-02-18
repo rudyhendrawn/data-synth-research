@@ -98,7 +98,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("single_dataset_ablation.log"),
+        logging.FileHandler(os.path.join(project_root, "single_dataset_ablation.log")),
         logging.StreamHandler(),
     ],
     force=True,
@@ -139,9 +139,10 @@ def _save_significance_results(
                 results.append(row)
 
     if results:
-        os.makedirs(os.path.join("results", "ablation"), exist_ok=True)
+        out_dir = os.path.join(project_root, "results", "ablation")
+        os.makedirs(out_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_path = os.path.join("results", "ablation", f"{filename_prefix}_{timestamp}.csv")
+        out_path = os.path.join(out_dir, f"{filename_prefix}_{timestamp}.csv")
         pd.DataFrame(results).to_csv(out_path, index=False)
         logger.info("Significance tests saved to %s", out_path)
 
@@ -180,10 +181,12 @@ if __name__ == "__main__":
         GAN_N_CRITIC,
     )
 
-    ablation_mgr = AblationStudyManager(output_dir="results/ablation")
+    ablation_mgr = AblationStudyManager(
+        output_dir=os.path.join(project_root, "results", "ablation")
+    )
     benchmark = CrossDomainBenchmark(
         datasets=datasets,
-        output_dir="results/cross_domain",
+        output_dir=os.path.join(project_root, "results", "cross_domain"),
         random_seeds=[ABLATION_SEED],
         data_root=DATA_ROOT,
         use_anomaly_feature=USE_ANOMALY_FEATURE,
