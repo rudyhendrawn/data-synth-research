@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-02-18T02:16:51.073708",
+  "experiments": [
+    {
+      "exp_id": "ablation_anomaly_signal_None",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "None",
+        "model": "LogisticRegression",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: None"
+    },
+    {
+      "exp_id": "ablation_anomaly_signal_IsolationForest",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "IsolationForest",
+        "model": "LogisticRegression",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: IsolationForest"
+    },
+    {
+      "exp_id": "ablation_anomaly_signal_LOF",
+      "components": {
+        "oversampling": "None",
+        "anomaly_signal": "LOF",
+        "model": "LogisticRegression",
+        "calibration": "None"
+      },
+      "description": "Ablate anomaly_signal: LOF"
+    }
+  ]
+}
