@@ -1,35 +1,3 @@
-{
-  "generated_at": "2026-02-18T02:16:51.074136",
-  "experiments": [
-    {
-      "exp_id": "ablation_calibration_None",
-      "components": {
-        "oversampling": "None",
-        "anomaly_signal": "None",
-        "model": "LogisticRegression",
-        "calibration": "None"
-      },
-      "description": "Ablate calibration: None"
-    },
-    {
-      "exp_id": "ablation_calibration_Platt",
-      "components": {
-        "oversampling": "None",
-        "anomaly_signal": "None",
-        "model": "LogisticRegression",
-        "calibration": "Platt"
-      },
-      "description": "Ablate calibration: Platt"
-    },
-    {
-      "exp_id": "ablation_calibration_Isotonic",
-      "components": {
-        "oversampling": "None",
-        "anomaly_signal": "None",
-        "model": "LogisticRegression",
-        "calibration": "Isotonic"
-      },
-      "description": "Ablate calibration: Isotonic"
-    }
-  ]
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:83a0a3c506e85e412b03ea95f2d20cab37d37680e9e37a0e5614249a8ebccbe7
+size 904
