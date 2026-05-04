@@ -6,7 +6,6 @@ notes/
 
 # Dataset and results directory
 data/
-results/
 *.csv
 *.zip
 
