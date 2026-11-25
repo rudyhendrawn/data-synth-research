@@ -1,0 +1,33 @@
+{
+  "seeds": [42, 123, 456, 789, 1011],
+  "precision_targets": [0.5, 0.7, 0.8, 0.9, 0.95],
+  "baseline_ids": {
+    "01_creditcard.csv": "ablation_oversampling_None_model_XGBoost",
+    "03_fraud_oracle.csv": "ablation_oversampling_None_model_XGBoost",
+    "04_bank_account.csv": "ablation_oversampling_None_model_XGBoost",
+    "05_online_payment.csv": "ablation_oversampling_None_model_XGBoost"
+  },
+  "datasets": {
+    "01_creditcard.csv": [
+      {"exp_id": "ablation_oversampling_None_model_XGBoost", "components": {"oversampling": "None", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_ConditionalWGAN-GP_model_MLP", "components": {"oversampling": "ConditionalWGAN-GP", "model": "MLP"}},
+      {"exp_id": "ablation_oversampling_ROS_model_RandomForest", "components": {"oversampling": "ROS", "model": "RandomForest"}}
+    ],
+    "03_fraud_oracle.csv": [
+      {"exp_id": "ablation_oversampling_None_model_XGBoost", "components": {"oversampling": "None", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_ROS_model_XGBoost", "components": {"oversampling": "ROS", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_CTGAN_model_XGBoost", "components": {"oversampling": "CTGAN", "model": "XGBoost"}}
+    ],
+    "04_bank_account.csv": [
+      {"exp_id": "ablation_oversampling_None_model_XGBoost", "components": {"oversampling": "None", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_PytorchGAN_model_XGBoost", "components": {"oversampling": "PytorchGAN", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_ConditionalWGAN-GP_model_XGBoost", "components": {"oversampling": "ConditionalWGAN-GP", "model": "XGBoost"}}
+    ],
+    "05_online_payment.csv": [
+      {"exp_id": "ablation_oversampling_None_model_XGBoost", "components": {"oversampling": "None", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_SMOTEENN_model_XGBoost", "components": {"oversampling": "SMOTEENN", "model": "XGBoost"}},
+      {"exp_id": "ablation_oversampling_ROS_model_XGBoost", "components": {"oversampling": "ROS", "model": "XGBoost"}}
+    ]
+  },
+  "benchmark_options": {"gan_epochs": 100, "gan_train_max_minority_ratio": 0.5}
+}

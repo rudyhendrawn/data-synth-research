@@ -68,6 +68,7 @@ class CrossDomainBenchmark:
         gan_early_stopping: bool = True,
         gan_early_stopping_patience: int = 10,
         gan_early_stopping_delta: float = 1e-3,
+        sensitivity_targets: Optional[List[float]] = None,
     ) -> None:
         self.datasets = datasets
         self.output_dir = output_dir
@@ -90,6 +91,10 @@ class CrossDomainBenchmark:
         self.gan_early_stopping = gan_early_stopping
         self.gan_early_stopping_patience = gan_early_stopping_patience
         self.gan_early_stopping_delta = gan_early_stopping_delta
+        self.sensitivity_targets = sensitivity_targets or []
+        if any(not 0 < target <= 1 for target in self.sensitivity_targets):
+            raise ValueError("Precision targets must be greater than 0 and at most 1")
+        self.sensitivity_results: List[Dict[str, Any]] = []
         os.makedirs(output_dir, exist_ok=True)
 
         if gap_configs is None:
@@ -118,6 +123,8 @@ class CrossDomainBenchmark:
         """
         random.seed(seed)
         np.random.seed(seed)
+        import torch
+        torch.manual_seed(seed)
 
         df = data_loader.load_raw()
         config = data_loader.config
@@ -200,6 +207,26 @@ class CrossDomainBenchmark:
         else:
             calib_probs = np.asarray(model.predict_proba(X_val))[:, 1]
             test_probs = np.asarray(model.predict_proba(X_test))[:, 1]
+
+        for target in self.sensitivity_targets:
+            selected, _, _ = select_threshold_by_precision(y_val, calib_probs, target)
+            validation_metrics = metrics_at_threshold(y_val, calib_probs, selected)
+            evaluation_metrics = metrics_at_threshold(y_test, test_probs, selected)
+            predictions = test_probs >= selected
+            self.sensitivity_results.append({
+                "dataset": dataset_name, "exp_id": experiment.exp_id, "seed": seed,
+                "target": target, "threshold": selected,
+                "validation_precision": validation_metrics["precision"],
+                "validation_recall": validation_metrics["recall"],
+                "validation_target_met": validation_metrics["precision"] >= target,
+                "test_precision": evaluation_metrics["precision"],
+                "test_recall": evaluation_metrics["recall"],
+                "test_f1": evaluation_metrics["f1"], "test_fpr": evaluation_metrics["fpr"],
+                "test_target_met": evaluation_metrics["precision"] >= target,
+                "test_alerts": int(predictions.sum()),
+                "test_fraud_detected": int(np.sum(predictions & (np.asarray(y_test) == 1))),
+                "test_fraud_total": int(np.sum(np.asarray(y_test) == 1)),
+            })
 
         if self.threshold_strategy == "fpr":
             threshold, calib_prec, calib_rec, calib_fpr = select_threshold_by_fpr(

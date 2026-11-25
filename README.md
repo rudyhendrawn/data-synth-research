@@ -213,6 +213,16 @@ Execution sequence per experiment:
 
 ## 8) How to Run
 
+### Reviewer revision experiments
+
+Use `configs/revision_experiments.example.json` as a starting point for a separate configuration. Specify the configurations selected from the original results for each dataset before running; the example is illustrative and does not identify all reported winners. Set `baseline_ids` for paired PR-AUC differences and list the desired seeds and validation precision targets. Additional `CrossDomainBenchmark` options can be specified under `benchmark_options`.
+
+```bash
+python3 scripts/revision_experiments.py configs/revision_experiments.example.json --data-root /path/to/datasets
+```
+
+Each run writes its configuration, environment versions, per-run status and elapsed time, sensitivity results, and successful-run summaries under a timestamped directory in `results/revision/`. GAN caches are isolated by run, dataset, experiment and seed. Precision thresholds are chosen on validation data and evaluated on test data; inspect `validation_target_met` and `test_target_met` before interpreting a target. Pairwise differences use matching seeds; missing runs reduce `n_pairs`. Bootstrap intervals represent test-sample uncertainty, while variation between seeds reflects training randomness. Fixed seeds alone do not guarantee identical GPU results across hardware or software versions.
+
 ## A) Full cross-domain ablation (all datasets)
 
 ```bash
