@@ -32,8 +32,8 @@ def recall_at_precision_target(y_true, probs, precision_target: float) -> float:
     prec, rec, _ = precision_recall_curve(y_true, probs)
     if len(prec) <= 1:
         return 0.0
-    prec_thr = prec[1:]
-    rec_thr = rec[1:]
+    prec_thr = prec[:-1]
+    rec_thr = rec[:-1]
     mask = prec_thr >= precision_target
     if not np.any(mask):
         return 0.0
@@ -48,8 +48,8 @@ def select_threshold_by_precision(
     prec, rec, thr = precision_recall_curve(y_true, probs)
     if len(thr) == 0:
         return 0.5, 0.0, 0.0
-    prec_thr = prec[1:]
-    rec_thr = rec[1:]
+    prec_thr = prec[:-1]
+    rec_thr = rec[:-1]
     mask = prec_thr >= precision_target
     if np.any(mask):
         best_idx = np.argmax(rec_thr[mask])

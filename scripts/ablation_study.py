@@ -61,7 +61,9 @@ RUN_FULL_ABLATION_SINGLE_DATASET = _env_bool(
     RUN_SINGLE_DATASET,
 )
 DATASET_NAME = os.environ.get("DATASET_NAME", "03_fraud_oracle.csv")
-ABLATION_SEED = _env_int("ABLATION_SEEDS", 42)
+ABLATION_SEEDS = [int(value.strip()) for value in os.environ.get("ABLATION_SEEDS", "42").split(",") if value.strip()]
+if not ABLATION_SEEDS or len(set(ABLATION_SEEDS)) != len(ABLATION_SEEDS):
+    raise ValueError("ABLATION_SEEDS must contain one or more distinct integers")
 USE_ANOMALY_FEATURE = _env_bool("USE_ANOMALY_FEATURE", True)
 ANOMALY_CONTAMINATION = _env_float(
     "ANOMALY_CONTAMINATION",
@@ -183,7 +185,7 @@ if __name__ == "__main__":
             "Config: seeds=%s | use_anomaly=%s | anomaly_contamination=%s "
             "| gan_epochs=%s | gan_batch=%s | gan_hidden=%s | gan_noise=%s | gan_n_critic=%s"
         ),
-        ABLATION_SEED,
+        ABLATION_SEEDS,
         USE_ANOMALY_FEATURE,
         ANOMALY_CONTAMINATION,
         GAN_EPOCHS,
@@ -199,7 +201,7 @@ if __name__ == "__main__":
     benchmark = CrossDomainBenchmark(
         datasets=datasets,
         output_dir=os.path.join(project_root, "results", "cross_domain"),
-        random_seeds=[ABLATION_SEED],
+        random_seeds=ABLATION_SEEDS,
         data_root=DATA_ROOT,
         use_anomaly_feature=USE_ANOMALY_FEATURE,
         anomaly_contamination=ANOMALY_CONTAMINATION,
