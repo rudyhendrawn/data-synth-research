@@ -8,4 +8,5 @@ seaborn
 torch
 torchinfo
 xgboost
-sdv
+sdv==1.30.0
+pyarrow

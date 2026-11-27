@@ -213,6 +213,10 @@ Execution sequence per experiment:
 
 ## 8) How to Run
 
+For a Runpod GPU Pod, see [the revision experiment deployment guide](docs/runpod_revision_guide.md). The guide covers SSH, dataset transfer, preserving the template's PyTorch, a pilot, result retrieval, and cost considerations.
+
+For optional verified Parquet copies and format selection, see [the Parquet data guide](docs/parquet_data.md). CSV remains the default and the original data is preserved.
+
 ### Reviewer revision experiments
 
 Use `configs/revision_experiments.example.json` as a starting point for a separate configuration. Specify the configurations selected from the original results for each dataset before running; the example is illustrative and does not identify all reported winners. Set `baseline_ids` for paired PR-AUC differences and list the desired seeds and validation precision targets. Additional `CrossDomainBenchmark` options can be specified under `benchmark_options`.
