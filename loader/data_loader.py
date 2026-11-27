@@ -23,7 +23,8 @@ class UniversalDataLoader:
             project_root: str, 
             data_root: str, 
             verbose: bool = True,
-            large_data: bool = False
+            large_data: bool = False,
+            data_format: str = 'csv',
         ):
         """
         Args:
@@ -34,6 +35,8 @@ class UniversalDataLoader:
         """
         if dataset_name not in DATASET_CONFIG:
             raise ValueError(f"Dataset '{dataset_name}' not configured. Available: {list(DATASET_CONFIG.keys())}")
+        if data_format not in {'csv', 'parquet'}:
+            raise ValueError("data_format must be 'csv' or 'parquet'")
         
         self.dataset_name = dataset_name
         self.project_root = project_root
@@ -41,8 +44,10 @@ class UniversalDataLoader:
         self.config = DATASET_CONFIG[dataset_name]
         self.verbose = verbose
         self.large_data = bool(large_data) if large_data is not None else False
+        self.data_format = data_format
         self.preprocessor: Optional[DatasetPreprocessor] = None
-        self.data_path = os.path.join(self.data_root, dataset_name)
+        filename = dataset_name if data_format == 'csv' else os.path.splitext(dataset_name)[0] + '.parquet'
+        self.data_path = os.path.join(self.data_root, filename)
 
         logger.info(f"Initialized loader for: {self.config['name']}")
         logger.info(f"Data path: {self.data_path}")
@@ -51,7 +56,7 @@ class UniversalDataLoader:
         if not os.path.exists(self.data_path):
             raise FileNotFoundError(f"Data file not found at: {self.data_path}")
         
-        df = pd.read_csv(self.data_path)
+        df = pd.read_csv(self.data_path) if self.data_format == 'csv' else pd.read_parquet(self.data_path).replace({None: np.nan})
         logger.info(f"Loaded raw data: {df.shape[0]} rows, {df.shape[1]} columns")
         logger.info(f"Class distribution: {df[self.config['label_col']].value_counts().to_dict()}")
 
@@ -93,6 +98,17 @@ class UniversalDataLoader:
     ) -> Iterator[pd.DataFrame]:
         if not os.path.exists(self.data_path):
             raise FileNotFoundError(f"Data file not found at: {self.data_path}")
+
+        if self.data_format == 'parquet':
+            import pyarrow.parquet as pq
+
+            def batches():
+                parquet_file = pq.ParquetFile(self.data_path)
+                for batch in parquet_file.iter_batches(batch_size=chunk_size, columns=usecols):
+                    frame = batch.to_pandas().replace({None: np.nan})
+                    yield frame.astype(dtype) if dtype is not None else frame
+
+            return batches()
 
         if usecols is None and dtype is None:
             return pd.read_csv(self.data_path, chunksize=chunk_size)

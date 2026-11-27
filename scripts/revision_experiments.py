@@ -26,6 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run prespecified revision experiments")
     parser.add_argument("config", type=Path, help="Path to experiment JSON")
     parser.add_argument("--data-root", type=Path, required=True)
+    parser.add_argument("--data-format", choices=("csv", "parquet"), default="csv")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "results" / "revision")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -41,8 +42,8 @@ def main():
     run_dir = args.output_dir / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     run_dir.mkdir()
     (run_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
-    metadata = {"python": sys.version, "platform": platform.platform(), "numpy": np.__version__, "pandas": pd.__version__}
-    for package in ("scikit-learn", "torch", "xgboost", "imbalanced-learn"):
+    metadata = {"python": sys.version, "platform": platform.platform(), "numpy": np.__version__, "pandas": pd.__version__, "data_format": args.data_format, "data_root": str(args.data_root.resolve())}
+    for package in ("scikit-learn", "torch", "xgboost", "imbalanced-learn", "pyarrow"):
         from importlib.metadata import version, PackageNotFoundError
         try:
             metadata[package] = version(package)
@@ -62,7 +63,7 @@ def main():
             gan_cache_path=str(run_dir / "synthetic_cache" / Path(filename).stem),
             **config.get("benchmark_options", {}),
         )
-        loader = UniversalDataLoader(filename, str(PROJECT_ROOT), str(args.data_root), verbose=False)
+        loader = UniversalDataLoader(filename, str(PROJECT_ROOT), str(args.data_root), verbose=False, data_format=args.data_format)
         temporal_cv = TemporalLeakageFreeCV(gap_config=benchmark.gap_configs[filename])
         seen = set()
         for definition in definitions:
